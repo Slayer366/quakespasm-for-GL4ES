@@ -1272,6 +1272,10 @@ void Sbar_IntermissionOverlay (void)
 
 	GL_SetCanvas (CANVAS_MENU); //johnfitz
 
+#ifdef USE_GL4ES
+	glEnable(GL_BLEND);
+#endif
+
 	pic = Draw_CachePic ("gfx/complete.lmp");
 	Draw_Pic (64, 24, pic);
 
@@ -1292,6 +1296,10 @@ void Sbar_IntermissionOverlay (void)
 	Sbar_IntermissionNumber (152, 144, cl.stats[STAT_MONSTERS], 3, 0); //johnfitz -- was 160
 	Draw_Pic (224,144,sb_slash); //johnfitz -- was 232
 	Sbar_IntermissionNumber (240, 144, cl.stats[STAT_TOTALMONSTERS], 3, 0); //johnfitz -- was 248
+
+#ifdef USE_GL4ES
+	glDisable(GL_BLEND);
+#endif
 }
 
 

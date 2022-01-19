@@ -1195,6 +1195,10 @@ void Con_DrawConsole (int lines, qboolean drawinput)
 // draw the background
 	Draw_ConsoleBackground ();
 
+#ifdef USE_GL4ES
+	glEnable(GL_BLEND);
+#endif
+
 // draw the buffer text
 	rows = (con_vislines +7)/8;
 	y = vid.conheight - rows*8;
@@ -1230,6 +1234,10 @@ void Con_DrawConsole (int lines, qboolean drawinput)
 	q_snprintf (ver, sizeof(ver), "QuakeSpasm " QUAKESPASM_VER_STRING);
 	for (x = 0; x < (int)strlen(ver); x++)
 		Draw_Character ((con_linewidth - strlen(ver) + x + 2)<<3, y, ver[x] /*+ 128*/);
+
+#ifdef USE_GL4ES
+	glDisable(GL_BLEND);
+#endif
 }
 
 

@@ -2583,6 +2583,10 @@ void M_Draw (void)
 	}
 
 	GL_SetCanvas (CANVAS_MENU); //johnfitz
+	
+#ifdef USE_GL4ES
+	glEnable(GL_BLEND);
+#endif
 
 	switch (m_state)
 	{
@@ -2659,6 +2663,10 @@ void M_Draw (void)
 		M_ServerList_Draw ();
 		break;
 	}
+
+#ifdef USE_GL4ES
+	glDisable(GL_BLEND);
+#endif
 
 	if (m_entersound)
 	{

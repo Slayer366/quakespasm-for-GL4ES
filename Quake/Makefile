@@ -26,6 +26,9 @@ MP3LIB=mad
 # which library to use for ogg decoding: vorbis or tremor
 VORBISLIB=vorbis
 
+#use GL4ES
+USE_GL4ES=0
+
 # ---------------------------
 # Helper functions
 # ---------------------------
@@ -171,6 +174,9 @@ CODECLIBS+= -lxmp
 endif
 ifeq ($(USE_CODEC_UMX),1)
 CFLAGS+= -DUSE_CODEC_UMX
+endif
+ifeq ($(USE_GL4ES),1)
+CFLAGS+= -DUSE_GL4ES
 endif
 
 COMMON_LIBS:= -lm -lGL
