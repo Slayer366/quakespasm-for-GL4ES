@@ -32,11 +32,12 @@ int		lightmap_bytes;
 
 #define MAX_SANITY_LIGHTMAPS (1u<<20)
 struct lightmap_s	*lightmaps;
-int					lightmap_count;
-int					last_lightmap_allocated;
-int					allocated[LMBLOCK_WIDTH];
+int		lightmap_count;
 
-unsigned	blocklights[LMBLOCK_WIDTH*LMBLOCK_HEIGHT*3]; //johnfitz -- was 18*18, added lit support (*3) and loosened surface extents maximum (LMBLOCK_WIDTH*LMBLOCK_HEIGHT)
+static int	allocated[LMBLOCK_WIDTH];
+static int	last_lightmap_allocated;
+
+static unsigned	blocklights[LMBLOCK_WIDTH*LMBLOCK_HEIGHT*3]; //johnfitz -- was 18*18, added lit support (*3) and loosened surface extents maximum (LMBLOCK_WIDTH*LMBLOCK_HEIGHT)
 
 
 /*
@@ -120,378 +121,6 @@ void DrawGLTriangleFan (glpoly_t *p)
 =============================================================
 */
 
-#if 0
-/*
-================
-R_DrawSequentialPoly -- johnfitz -- rewritten
-================
-*/
-void R_DrawSequentialPoly (msurface_t *s)
-{
-	glpoly_t	*p;
-	texture_t	*t;
-	float		*v;
-	float		entalpha;
-	int			i;
-
-	t = R_TextureAnimation (s->texinfo->texture, currententity->frame);
-	entalpha = ENTALPHA_DECODE(currententity->alpha);
-
-// drawflat
-	if (r_drawflat_cheatsafe)
-	{
-		if ((s->flags & SURF_DRAWTURB) && r_oldwater.value)
-		{
-			for (p = s->polys->next; p; p = p->next)
-			{
-				srand((unsigned int) (uintptr_t) p);
-				glColor3f (rand()%256/255.0, rand()%256/255.0, rand()%256/255.0);
-				DrawGLPoly (p);
-				rs_brushpasses++;
-			}
-			return;
-		}
-
-		srand((unsigned int) (uintptr_t) s->polys);
-		glColor3f (rand()%256/255.0, rand()%256/255.0, rand()%256/255.0);
-		DrawGLPoly (s->polys);
-		rs_brushpasses++;
-		return;
-	}
-
-// fullbright
-	if ((r_fullbright_cheatsafe) && !(s->flags & SURF_DRAWTILED))
-	{
-		if (entalpha < 1)
-		{
-			glDepthMask(GL_FALSE);
-			glEnable(GL_BLEND);
-			glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-			glColor4f(1, 1, 1, entalpha);
-		}
-		
-		if (s->flags & SURF_DRAWFENCE)
-			glEnable (GL_ALPHA_TEST); // Flip on alpha test
-			
-		GL_Bind (t->gltexture);
-		DrawGLPoly (s->polys);
-		rs_brushpasses++;
-		
-		if (s->flags & SURF_DRAWFENCE)
-			glDisable (GL_ALPHA_TEST); // Flip alpha test back off
-				
-		if (entalpha < 1)
-		{
-			glDepthMask(GL_TRUE);
-			glDisable(GL_BLEND);
-			glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
-			glColor3f(1, 1, 1);
-		}
-		goto fullbrights;
-	}
-
-// r_lightmap
-	if (r_lightmap_cheatsafe)
-	{
-		if (s->flags & SURF_DRAWTILED)
-		{
-			glDisable (GL_TEXTURE_2D);
-			DrawGLPoly (s->polys);
-			glEnable (GL_TEXTURE_2D);
-			rs_brushpasses++;
-			return;
-		}
-
-		R_RenderDynamicLightmaps (s);
-		GL_Bind (lightmap_textures[s->lightmaptexturenum]);
-		if (!gl_overbright.value)
-		{
-			glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-			glColor3f(0.5, 0.5, 0.5);
-		}
-		glBegin (GL_POLYGON);
-		v = s->polys->verts[0];
-		for (i=0 ; i<s->polys->numverts ; i++, v+= VERTEXSIZE)
-		{
-			glTexCoord2f (v[5], v[6]);
-			glVertex3fv (v);
-		}
-		glEnd ();
-		if (!gl_overbright.value)
-		{
-			glColor3f(1,1,1);
-			glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
-		}
-		rs_brushpasses++;
-		return;
-	}
-
-// sky poly -- skip it, already handled in gl_sky.c
-	if (s->flags & SURF_DRAWSKY)
-		return;
-
-// water poly
-	if (s->flags & SURF_DRAWTURB)
-	{
-		if (currententity->alpha == ENTALPHA_DEFAULT)
-			entalpha = CLAMP(0.0, GL_WaterAlphaForSurface(s), 1.0);
-
-		if (entalpha < 1)
-		{
-			glDepthMask(GL_FALSE);
-			glEnable(GL_BLEND);
-			glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-			glColor4f(1, 1, 1, entalpha);
-		}
-		if (r_oldwater.value)
-		{
-			GL_Bind (s->texinfo->texture->gltexture);
-			for (p = s->polys->next; p; p = p->next)
-			{
-				DrawWaterPoly (p);
-				rs_brushpasses++;
-			}
-			rs_brushpasses++;
-		}
-		else
-		{
-			GL_Bind (s->texinfo->texture->warpimage);
-			s->texinfo->texture->update_warp = true; // FIXME: one frame too late!
-			DrawGLPoly (s->polys);
-			rs_brushpasses++;
-		}
-		if (entalpha < 1)
-		{
-			glDepthMask(GL_TRUE);
-			glDisable(GL_BLEND);
-			glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
-			glColor3f(1, 1, 1);
-		}
-		return;
-	}
-
-// missing texture
-	if (s->flags & SURF_NOTEXTURE)
-	{
-		if (entalpha < 1)
-		{
-			glDepthMask(GL_FALSE);
-			glEnable(GL_BLEND);
-			glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-			glColor4f(1, 1, 1, entalpha);
-		}
-		GL_Bind (t->gltexture);
-		DrawGLPoly (s->polys);
-		rs_brushpasses++;
-		if (entalpha < 1)
-		{
-			glDepthMask(GL_TRUE);
-			glDisable(GL_BLEND);
-			glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
-			glColor3f(1, 1, 1);
-		}
-		return;
-	}
-
-// lightmapped poly
-	if (entalpha < 1)
-	{
-		glDepthMask(GL_FALSE);
-		glEnable(GL_BLEND);
-		glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-		glColor4f(1, 1, 1, entalpha);
-	}
-	else
-		glColor3f(1, 1, 1);
-		
-	if (s->flags & SURF_DRAWFENCE)
-		glEnable (GL_ALPHA_TEST); // Flip on alpha test
-		
-	if (gl_overbright.value)
-	{
-		if (gl_texture_env_combine && gl_mtexable) //case 1: texture and lightmap in one pass, overbright using texture combiners
-		{
-			GL_DisableMultitexture(); // selects TEXTURE0
-			GL_Bind (t->gltexture);
-			glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-			GL_EnableMultitexture(); // selects TEXTURE1
-			GL_Bind (lightmap_textures[s->lightmaptexturenum]);
-			R_RenderDynamicLightmaps (s);
-			glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE_EXT);
-			glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB_EXT, GL_MODULATE);
-			glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_RGB_EXT, GL_PREVIOUS_EXT);
-			glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_RGB_EXT, GL_TEXTURE);
-			glTexEnvf(GL_TEXTURE_ENV, GL_RGB_SCALE_EXT, 2.0f);
-			glBegin(GL_POLYGON);
-			v = s->polys->verts[0];
-			for (i=0 ; i<s->polys->numverts ; i++, v+= VERTEXSIZE)
-			{
-				GL_MTexCoord2fFunc (GL_TEXTURE0_ARB, v[3], v[4]);
-				GL_MTexCoord2fFunc (GL_TEXTURE1_ARB, v[5], v[6]);
-				glVertex3fv (v);
-			}
-			glEnd ();
-			glTexEnvf(GL_TEXTURE_ENV, GL_RGB_SCALE_EXT, 1.0f);
-			glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-			GL_DisableMultitexture ();
-			rs_brushpasses++;
-		}
-		else if (entalpha < 1 || (s->flags & SURF_DRAWFENCE)) //case 2: can't do multipass if entity has alpha, so just draw the texture
-		{
-			GL_Bind (t->gltexture);
-			DrawGLPoly (s->polys);
-			rs_brushpasses++;
-		}
-		else //case 3: texture in one pass, lightmap in second pass using 2x modulation blend func, fog in third pass
-		{
-			//first pass -- texture with no fog
-			Fog_DisableGFog ();
-			GL_Bind (t->gltexture);
-			DrawGLPoly (s->polys);
-			Fog_EnableGFog ();
-			rs_brushpasses++;
-
-			//second pass -- lightmap with black fog, modulate blended
-			R_RenderDynamicLightmaps (s);
-			GL_Bind (lightmap_textures[s->lightmaptexturenum]);
-			glDepthMask (GL_FALSE);
-			glEnable (GL_BLEND);
-			glBlendFunc(GL_DST_COLOR, GL_SRC_COLOR); //2x modulate
-			Fog_StartAdditive ();
-			glBegin (GL_POLYGON);
-			v = s->polys->verts[0];
-			for (i=0 ; i<s->polys->numverts ; i++, v+= VERTEXSIZE)
-			{
-				glTexCoord2f (v[5], v[6]);
-				glVertex3fv (v);
-			}
-			glEnd ();
-			Fog_StopAdditive ();
-			rs_brushpasses++;
-
-			//third pass -- black geo with normal fog, additive blended
-			if (Fog_GetDensity() > 0)
-			{
-				glBlendFunc(GL_ONE, GL_ONE); //add
-				glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-				glColor3f(0,0,0);
-				DrawGLPoly (s->polys);
-				glColor3f(1,1,1);
-				glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
-				rs_brushpasses++;
-			}
-
-			glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-			glDisable (GL_BLEND);
-			glDepthMask (GL_TRUE);
-		}
-	}
-	else
-	{
-		if (gl_mtexable) //case 4: texture and lightmap in one pass, regular modulation
-		{
-			GL_DisableMultitexture(); // selects TEXTURE0
-			GL_Bind (t->gltexture);
-			glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-			GL_EnableMultitexture(); // selects TEXTURE1
-			GL_Bind (lightmap_textures[s->lightmaptexturenum]);
-			R_RenderDynamicLightmaps (s);
-			glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-			glBegin(GL_POLYGON);
-			v = s->polys->verts[0];
-			for (i=0 ; i<s->polys->numverts ; i++, v+= VERTEXSIZE)
-			{
-				GL_MTexCoord2fFunc (GL_TEXTURE0_ARB, v[3], v[4]);
-				GL_MTexCoord2fFunc (GL_TEXTURE1_ARB, v[5], v[6]);
-				glVertex3fv (v);
-			}
-			glEnd ();
-			GL_DisableMultitexture ();
-			rs_brushpasses++;
-		}
-		else if (entalpha < 1 || (s->flags & SURF_DRAWFENCE)) //case 5: can't do multipass if entity has alpha, so just draw the texture
-		{
-			GL_Bind (t->gltexture);
-			DrawGLPoly (s->polys);
-			rs_brushpasses++;
-		}
-		else //case 6: texture in one pass, lightmap in a second pass, fog in third pass
-		{
-			//first pass -- texture with no fog
-			Fog_DisableGFog ();
-			GL_Bind (t->gltexture);
-			DrawGLPoly (s->polys);
-			Fog_EnableGFog ();
-			rs_brushpasses++;
-
-			//second pass -- lightmap with black fog, modulate blended
-			R_RenderDynamicLightmaps (s);
-			GL_Bind (lightmap_textures[s->lightmaptexturenum]);
-			glDepthMask (GL_FALSE);
-			glEnable (GL_BLEND);
-			glBlendFunc (GL_ZERO, GL_SRC_COLOR); //modulate
-			Fog_StartAdditive ();
-			glBegin (GL_POLYGON);
-			v = s->polys->verts[0];
-			for (i=0 ; i<s->polys->numverts ; i++, v+= VERTEXSIZE)
-			{
-				glTexCoord2f (v[5], v[6]);
-				glVertex3fv (v);
-			}
-			glEnd ();
-			Fog_StopAdditive ();
-			rs_brushpasses++;
-
-			//third pass -- black geo with normal fog, additive blended
-			if (Fog_GetDensity() > 0)
-			{
-				glBlendFunc(GL_ONE, GL_ONE); //add
-				glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-				glColor3f(0,0,0);
-				DrawGLPoly (s->polys);
-				glColor3f(1,1,1);
-				glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
-				rs_brushpasses++;
-			}
-
-			glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-			glDisable (GL_BLEND);
-			glDepthMask (GL_TRUE);
-
-		}
-	}
-	if (entalpha < 1)
-	{
-		glDepthMask(GL_TRUE);
-		glDisable(GL_BLEND);
-		glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
-		glColor3f(1, 1, 1);
-	}
-	
-	if (s->flags & SURF_DRAWFENCE)
-		glDisable (GL_ALPHA_TEST); // Flip alpha test back off
-	
-fullbrights:
-	if (gl_fullbrights.value && t->fullbright)
-	{
-		glDepthMask (GL_FALSE);
-		glEnable (GL_BLEND);
-		glBlendFunc (GL_ONE, GL_ONE);
-		glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-		glColor3f (entalpha, entalpha, entalpha);
-		GL_Bind (t->fullbright);
-		Fog_StartAdditive ();
-		DrawGLPoly (s->polys);
-		Fog_StopAdditive ();
-		glColor3f(1, 1, 1);
-		glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
-		glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-		glDisable (GL_BLEND);
-		glDepthMask (GL_TRUE);
-		rs_brushpasses++;
-	}
-}
-#endif
 /*
 =================
 R_DrawBrushModel
@@ -549,7 +178,7 @@ void R_DrawBrushModel (entity_t *e)
 		e->origin[1] -= DIST_EPSILON;
 		e->origin[2] -= DIST_EPSILON;
 	}
-	R_RotateForEntity (e->origin, e->angles);
+	R_RotateForEntity (e->origin, e->angles, e->scale);
 	if (gl_zfix.value)
 	{
 		e->origin[0] += DIST_EPSILON;
@@ -615,7 +244,7 @@ void R_DrawBrushModel_ShowTris (entity_t *e)
 
 	glPushMatrix ();
 	e->angles[0] = -e->angles[0];	// stupid quake bug
-	R_RotateForEntity (e->origin, e->angles);
+	R_RotateForEntity (e->origin, e->angles, e->scale);
 	e->angles[0] = -e->angles[0];	// stupid quake bug
 
 	//
@@ -766,10 +395,8 @@ int AllocBlock (int w, int h, int *x, int *y)
 }
 
 
-mvertex_t	*r_pcurrentvertbase;
-qmodel_t	*currentmodel;
-
-int	nColinElim;
+static mvertex_t	*r_pcurrentvertbase;
+static  qmodel_t	*currentmodel;
 
 /*
 ========================
@@ -780,6 +407,12 @@ void GL_CreateSurfaceLightmap (msurface_t *surf)
 {
 	int		smax, tmax;
 	byte	*base;
+
+	if (surf->flags & SURF_DRAWTILED)
+	{
+		surf->lightmaptexturenum = -1;
+		return;
+	}
 
 	smax = (surf->extents[0]>>4)+1;
 	tmax = (surf->extents[1]>>4)+1;
@@ -800,7 +433,7 @@ void BuildSurfaceDisplayList (msurface_t *fa)
 	int			i, lindex, lnumverts;
 	medge_t		*pedges, *r_pedge;
 	float		*vec;
-	float		s, t;
+	float		s, t, s0, t0, sdiv, tdiv;
 	glpoly_t	*poly;
 
 // reconstruct the polygon
@@ -814,6 +447,20 @@ void BuildSurfaceDisplayList (msurface_t *fa)
 	poly->next = fa->polys;
 	fa->polys = poly;
 	poly->numverts = lnumverts;
+
+	if (fa->flags & SURF_DRAWTURB)
+	{
+		// match Mod_PolyForUnlitSurface
+		s0 = t0 = 0.f;
+		sdiv = tdiv = 128.f;
+	}
+	else
+	{
+		s0 = fa->texinfo->vecs[0][3];
+		t0 = fa->texinfo->vecs[1][3];
+		sdiv = fa->texinfo->texture->width;
+		tdiv = fa->texinfo->texture->height;
+	}
 
 	for (i=0 ; i<lnumverts ; i++)
 	{
@@ -829,11 +476,11 @@ void BuildSurfaceDisplayList (msurface_t *fa)
 			r_pedge = &pedges[-lindex];
 			vec = r_pcurrentvertbase[r_pedge->v[1]].position;
 		}
-		s = DotProduct (vec, fa->texinfo->vecs[0]) + fa->texinfo->vecs[0][3];
-		s /= fa->texinfo->texture->width;
+		s = DotProduct (vec, fa->texinfo->vecs[0]) + s0;
+		s /= sdiv;
 
-		t = DotProduct (vec, fa->texinfo->vecs[1]) + fa->texinfo->vecs[1][3];
-		t /= fa->texinfo->texture->height;
+		t = DotProduct (vec, fa->texinfo->vecs[1]) + t0;
+		t /= tdiv;
 
 		VectorCopy (vec, poly->verts[i]);
 		poly->verts[i][3] = s;
@@ -868,6 +515,10 @@ void BuildSurfaceDisplayList (msurface_t *fa)
 	//johnfitz -- removed gl_keeptjunctions code
 
 	poly->numverts = lnumverts;
+
+	// support r_oldwater 1 on lit water
+	if (fa->flags & SURF_DRAWTURB)
+		GL_SubdivideSurface (fa);
 }
 
 /*
@@ -1138,8 +789,11 @@ Combine and scale multiple lightmaps into the 8.8 format in blocklights
 */
 void R_BuildLightMap (msurface_t *surf, byte *dest, int stride)
 {
+	const int overbright = !!gl_overbright.value;
+	const int wide10bits = !!r_lightmapwide.value;
+
 	int			smax, tmax;
-	int			r,g,b;
+	unsigned		r, g, b;
 	int			i, j, size;
 	byte		*lightmap;
 	unsigned	scale;
@@ -1199,7 +853,7 @@ void R_BuildLightMap (msurface_t *surf, byte *dest, int stride)
 		{
 			for (j=0 ; j<smax ; j++)
 			{
-				if (gl_overbright.value)
+				if (overbright)
 				{
 					r = *bl++ >> 8;
 					g = *bl++ >> 8;
@@ -1210,11 +864,30 @@ void R_BuildLightMap (msurface_t *surf, byte *dest, int stride)
 					r = *bl++ >> 7;
 					g = *bl++ >> 7;
 					b = *bl++ >> 7;
+					if (wide10bits) {
+						// artifically clamp to 255 so gl_overbright 0 renders as expected in the wide10bits case
+						r = (r > 255) ? 255 : r;
+						g = (g > 255) ? 255 : g;
+						b = (b > 255) ? 255 : b;
+						goto loc0;
+					}
 				}
-				*dest++ = (r > 255)? 255 : r;
-				*dest++ = (g > 255)? 255 : g;
-				*dest++ = (b > 255)? 255 : b;
-				*dest++ = 255;
+				if (wide10bits)
+				{
+					r = (r > 1023)? 1023 : r;
+					g = (g > 1023)? 1023 : g;
+					b = (b > 1023)? 1023 : b;
+					loc0:
+					*(unsigned int*)dest = (r<<22) | (g<<12) | (b<<2) | 3;
+					dest += 4;
+				}
+				else
+				{
+					*dest++ = (r > 255)? 255 : r;
+					*dest++ = (g > 255)? 255 : g;
+					*dest++ = (b > 255)? 255 : b;
+					*dest++ = 255;
+				}
 			}
 		}
 		break;
@@ -1225,7 +898,7 @@ void R_BuildLightMap (msurface_t *surf, byte *dest, int stride)
 		{
 			for (j=0 ; j<smax ; j++)
 			{
-				if (gl_overbright.value)
+				if (overbright)
 				{
 					r = *bl++ >> 8;
 					g = *bl++ >> 8;
@@ -1236,11 +909,30 @@ void R_BuildLightMap (msurface_t *surf, byte *dest, int stride)
 					r = *bl++ >> 7;
 					g = *bl++ >> 7;
 					b = *bl++ >> 7;
+					if (wide10bits) {
+						// artifically clamp to 255 so gl_overbright 0 renders as expected in the wide10bits case
+						r = (r > 255) ? 255 : r;
+						g = (g > 255) ? 255 : g;
+						b = (b > 255) ? 255 : b;
+						goto loc1;
+					}
 				}
-				*dest++ = (b > 255)? 255 : b;
-				*dest++ = (g > 255)? 255 : g;
-				*dest++ = (r > 255)? 255 : r;
-				*dest++ = 255;
+				if (wide10bits)
+				{
+					r = (r > 1023)? 1023 : r;
+					g = (g > 1023)? 1023 : g;
+					b = (b > 1023)? 1023 : b;
+					loc1:
+					*(unsigned int*)dest = (b<<22) | (g<<12) | (r<<2) | 3;
+					dest += 4;
+				}
+				else
+				{
+					*dest++ = (b > 255)? 255 : b;
+					*dest++ = (g > 255)? 255 : g;
+					*dest++ = (r > 255)? 255 : r;
+					*dest++ = 255;
+				}
 			}
 		}
 		break;
@@ -1258,6 +950,9 @@ assumes lightmap texture is already bound
 */
 static void R_UploadLightmap(int lmap)
 {
+	const int wide10bits = !!r_lightmapwide.value;
+	const GLenum type = wide10bits ?
+	    GL_UNSIGNED_INT_10_10_10_2 : GL_UNSIGNED_BYTE;
 	struct lightmap_s *lm = &lightmaps[lmap];
 
 	if (!lm->modified)
@@ -1266,7 +961,7 @@ static void R_UploadLightmap(int lmap)
 	lm->modified = false;
 
 	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, lm->rectchange.t, LMBLOCK_WIDTH, lm->rectchange.h, gl_lightmap_format,
-			GL_UNSIGNED_BYTE, lm->data+lm->rectchange.t*LMBLOCK_WIDTH*lightmap_bytes);
+			type, lm->data + lm->rectchange.t*LMBLOCK_WIDTH*lightmap_bytes);
 	lm->rectchange.l = LMBLOCK_WIDTH;
 	lm->rectchange.t = LMBLOCK_HEIGHT;
 	lm->rectchange.h = 0;
@@ -1296,6 +991,9 @@ R_RebuildAllLightmaps -- johnfitz -- called when gl_overbright gets toggled
 */
 void R_RebuildAllLightmaps (void)
 {
+	const int wide10bits = !!r_lightmapwide.value;
+	const GLenum type = wide10bits ?
+	    GL_UNSIGNED_INT_10_10_10_2 : GL_UNSIGNED_BYTE;
 	int			i, j;
 	qmodel_t	*mod;
 	msurface_t	*fa;
@@ -1325,6 +1023,6 @@ void R_RebuildAllLightmaps (void)
 	{
 		GL_Bind (lightmaps[i].texture);
 		glTexSubImage2D (GL_TEXTURE_2D, 0, 0, 0, LMBLOCK_WIDTH, LMBLOCK_HEIGHT, gl_lightmap_format,
-				 GL_UNSIGNED_BYTE, lightmaps[i].data);
+				 type, lightmaps[i].data);
 	}
 }

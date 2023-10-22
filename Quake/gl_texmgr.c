@@ -24,8 +24,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "quakedef.h"
 
-const int	gl_solid_format = 3;
-const int	gl_alpha_format = 4;
+static const int	gl_solid_format = 3;
+static const int	gl_alpha_format = 4;
 
 static cvar_t	gl_texturemode = {"gl_texturemode", "", CVAR_ARCHIVE};
 static cvar_t	gl_texture_anisotropy = {"gl_texture_anisotropy", "1", CVAR_ARCHIVE};
@@ -44,8 +44,6 @@ unsigned int d_8to24table_fbright_fence[256];
 unsigned int d_8to24table_nobright[256];
 unsigned int d_8to24table_nobright_fence[256];
 unsigned int d_8to24table_conchars[256];
-unsigned int d_8to24table_shirt[256];
-unsigned int d_8to24table_pants[256];
 
 /*
 ================================================================================
@@ -69,7 +67,7 @@ static glmode_t glmodes[] = {
 	{GL_LINEAR,  GL_LINEAR_MIPMAP_NEAREST,	"GL_LINEAR_MIPMAP_NEAREST"},
 	{GL_LINEAR,  GL_LINEAR_MIPMAP_LINEAR,	"GL_LINEAR_MIPMAP_LINEAR"},
 };
-#define NUM_GLMODES (int)(sizeof(glmodes)/sizeof(glmodes[0]))
+#define NUM_GLMODES (int)Q_COUNTOF(glmodes)
 static int glmode_idx = NUM_GLMODES - 1; /* trilinear */
 
 /*
@@ -80,10 +78,8 @@ TexMgr_DescribeTextureModes_f -- report available texturemodes
 static void TexMgr_DescribeTextureModes_f (void)
 {
 	int i;
-
 	for (i = 0; i < NUM_GLMODES; i++)
 		Con_SafePrintf ("   %2i: %s\n", i + 1, glmodes[i].name);
-
 	Con_Printf ("%i modes\n", i);
 }
 
@@ -240,9 +236,9 @@ static void TexMgr_Imagedump_f (void)
 	for (glt = active_gltextures; glt; glt = glt->next)
 	{
 		q_strlcpy (tempname, glt->name, sizeof(tempname));
-		while ( (c = strchr(tempname, ':')) ) *c = '_';
-		while ( (c = strchr(tempname, '/')) ) *c = '_';
-		while ( (c = strchr(tempname, '*')) ) *c = '_';
+		while ((c = strchr(tempname, ':')) != NULL) *c = '_';
+		while ((c = strchr(tempname, '/')) != NULL) *c = '_';
+		while ((c = strchr(tempname, '*')) != NULL) *c = '_';
 		q_snprintf(tganame, sizeof(tganame), "imagedump/%s.tga", tempname);
 
 		GL_Bind (glt);
@@ -470,7 +466,8 @@ void TexMgr_LoadPalette (void)
 
 	mark = Hunk_LowMark ();
 	pal = (byte *) Hunk_Alloc (768);
-	fread (pal, 1, 768, f);
+	if (!fread(pal, 768, 1, f))
+		Sys_Error ("Failed reading gfx/palette.lmp");
 	fclose(f);
 
 	//standard palette, 255 is transparent
@@ -605,7 +602,6 @@ void TexMgr_Init (void)
 	int i;
 	static byte notexture_data[16] = {159,91,83,255,0,0,0,255,0,0,0,255,159,91,83,255}; //black and pink checker
 	static byte nulltexture_data[16] = {127,191,255,255,0,0,0,255,0,0,0,255,127,191,255,255}; //black and blue checker
-	extern texture_t *r_notexture_mip, *r_notexture_mip2;
 
 	// init texture list
 	free_gltextures = (gltexture_t *) Hunk_AllocName (MAX_GLTEXTURES * sizeof(gltexture_t), "gltextures");
@@ -672,11 +668,15 @@ TexMgr_SafeTextureSize -- return a size with hardware and user prefs in mind
 */
 int TexMgr_SafeTextureSize (int s)
 {
+	int p = (int)gl_max_size.value;
 	if (!gl_texture_NPOT)
 		s = TexMgr_Pad(s);
-	if ((int)gl_max_size.value > 0)
-		s = q_min(TexMgr_Pad((int)gl_max_size.value), s);
-	s = q_min(gl_hardware_maxsize, s);
+	if (p > 0) {
+		p = TexMgr_Pad(p);
+		if (p < s) s = p;
+	}
+	if (s > gl_hardware_maxsize)
+	    s = gl_hardware_maxsize;
 	return s;
 }
 
@@ -689,8 +689,7 @@ int TexMgr_PadConditional (int s)
 {
 	if (s < TexMgr_SafeTextureSize(s))
 		return TexMgr_Pad(s);
-	else
-		return s;
+	return s;
 }
 
 /*
@@ -1048,12 +1047,12 @@ static void TexMgr_LoadImage32 (gltexture_t *glt, unsigned *data)
 	glTexImage2D (GL_TEXTURE_2D, 0, internalformat, glt->width, glt->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
 
 	// upload mipmaps
-	if (glt->flags & TEXPREF_MIPMAP)
+	if (glt->flags & TEXPREF_MIPMAP && !(glt->flags & TEXPREF_WARPIMAGE)) // warp image mipmaps are generated later
 	{
 		mipwidth = glt->width;
 		mipheight = glt->height;
 
-		for (miplevel=1; mipwidth > 1 || mipheight > 1; miplevel++)
+		for (miplevel = 1; mipwidth > 1 || mipheight > 1; miplevel++)
 		{
 			if (mipwidth > 1)
 			{
@@ -1177,9 +1176,13 @@ TexMgr_LoadLightmap -- handles lightmap data
 */
 static void TexMgr_LoadLightmap (gltexture_t *glt, byte *data)
 {
+	const qboolean wide10bits = !!r_lightmapwide.value;
+	const GLenum type = wide10bits ? GL_UNSIGNED_INT_10_10_10_2 : GL_UNSIGNED_BYTE;
+	const GLint internalfmt = wide10bits ? GL_RGB10_A2 : lightmap_bytes;
+
 	// upload it
 	GL_Bind (glt);
-	glTexImage2D (GL_TEXTURE_2D, 0, lightmap_bytes, glt->width, glt->height, 0, gl_lightmap_format, GL_UNSIGNED_BYTE, data);
+	glTexImage2D (GL_TEXTURE_2D, 0, internalfmt, glt->width, glt->height, 0, gl_lightmap_format, type, data);
 
 	// set filter modes
 	TexMgr_SetFilterModes (glt);
@@ -1277,6 +1280,7 @@ void TexMgr_ReloadImage (gltexture_t *glt, int shirt, int pants)
 	byte	translation[256];
 	byte	*src, *dst, *data = NULL, *translated;
 	int	mark, size, i;
+
 //
 // get source data
 //
@@ -1285,6 +1289,7 @@ void TexMgr_ReloadImage (gltexture_t *glt, int shirt, int pants)
 	if (glt->source_file[0] && glt->source_offset) {
 		//lump inside file
 		FILE *f;
+		int sz;
 		COM_FOpenFile(glt->source_file, &f, NULL);
 		if (!f) goto invalid;
 		fseek (f, glt->source_offset, SEEK_CUR);
@@ -1297,8 +1302,12 @@ void TexMgr_ReloadImage (gltexture_t *glt, int shirt, int pants)
 			size *= lightmap_bytes;
 		}
 		data = (byte *) Hunk_Alloc (size);
-		fread (data, 1, size, f);
+		sz = (int) fread (data, 1, size, f);
 		fclose (f);
+		if (sz != size) {
+			Hunk_FreeToLowMark(mark);
+			Host_Error("Read error for %s", glt->name);
+		}
 	}
 	else if (glt->source_file[0] && !glt->source_offset) {
 		data = Image_LoadImage (glt->source_file, (int *)&glt->source_width, (int *)&glt->source_height); //simple file

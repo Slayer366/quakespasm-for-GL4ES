@@ -24,15 +24,14 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 extern cvar_t r_drawflat;
 
-cvar_t r_oldwater = {"r_oldwater", "0", CVAR_ARCHIVE};
-cvar_t r_waterquality = {"r_waterquality", "8", CVAR_NONE};
+cvar_t r_oldwater = {"r_oldwater", "1", CVAR_ARCHIVE};
+cvar_t r_waterquality = {"r_waterquality", "4", CVAR_NONE};
 cvar_t r_waterwarp = {"r_waterwarp", "1", CVAR_NONE};
 
 int gl_warpimagesize;
 float load_subdivide_size; //johnfitz -- remember what subdivide_size value was when this map was loaded
 
-float	turbsin[] =
-{
+static const float	turbsin[] = {
 #include "gl_warp_sin.h"
 };
 
@@ -44,8 +43,6 @@ float	turbsin[] =
 //  OLD-STYLE WATER
 //
 //==============================================================================
-
-extern	qmodel_t	*loadmodel;
 
 msurface_t	*warpface;
 
@@ -256,6 +253,8 @@ void R_UpdateWarpTextures (void)
 		//copy to texture
 		GL_Bind (tx->warpimage);
 		glCopyTexSubImage2D (GL_TEXTURE_2D, 0, 0, 0, glx, gly+glheight-gl_warpimagesize, gl_warpimagesize, gl_warpimagesize);
+		if (GL_GenerateMipmap)
+			GL_GenerateMipmap (GL_TEXTURE_2D);
 
 		tx->update_warp = false;
 	}

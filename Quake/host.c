@@ -84,6 +84,8 @@ cvar_t	temp1 = {"temp1","0",CVAR_NONE};
 cvar_t devstats = {"devstats","0",CVAR_NONE}; //johnfitz -- track developer statistics that vary every frame
 
 cvar_t	campaign = {"campaign","0",CVAR_NONE}; // for the 2021 rerelease
+cvar_t	horde = {"horde","0",CVAR_NONE}; // for the 2021 rerelease
+cvar_t	sv_cheats = {"sv_cheats","0",CVAR_NONE}; // for the 2021 rerelease
 
 devstats_t dev_stats, dev_peakstats;
 overflowtimes_t dev_overflows; //this stores the last time overflow messages were displayed, not the last time overflows occured
@@ -132,7 +134,7 @@ void Host_EndGame (const char *message, ...)
 	if (cls.state == ca_dedicated)
 		Sys_Error ("Host_EndGame: %s\n",string);	// dedicated servers exit
 
-	if (cls.demonum != -1)
+	if (cls.demonum != -1 && !cls.timedemo)
 		CL_NextDemo ();
 	else
 		CL_Disconnect ();
@@ -284,6 +286,8 @@ void Host_InitLocal (void)
 	Cvar_RegisterVariable (&deathmatch);
 
 	Cvar_RegisterVariable (&campaign);
+	Cvar_RegisterVariable (&horde);
+	Cvar_RegisterVariable (&sv_cheats);
 
 	Cvar_RegisterVariable (&pausable);
 
@@ -548,7 +552,7 @@ void Host_ClearMemory (void)
 	Sky_ClearAll();
 /* host_hunklevel MUST be set at this point */
 	Hunk_FreeToLowMark (host_hunklevel);
-	cls.signon = 0;
+	cls.signon = 0; // not CL_ClearSignons()
 	free(sv.edicts); // ericw -- sv.edicts switched to use malloc()
 	memset (&sv, 0, sizeof(sv));
 	memset (&cl, 0, sizeof(cl));
@@ -575,7 +579,7 @@ qboolean Host_FilterTime (float time)
 	realtime += time;
 
 	//johnfitz -- max fps cvar
-	maxfps = CLAMP (10.0, host_maxfps.value, 1000.0);
+	maxfps = CLAMP (10.f, host_maxfps.value, 1000.f);
 	if (!cls.timedemo && realtime - oldrealtime < 1.0/maxfps)
 		return false; // framerate is too high
 	//johnfitz
@@ -941,4 +945,3 @@ void Host_Shutdown(void)
 
 	LOC_Shutdown ();
 }
-

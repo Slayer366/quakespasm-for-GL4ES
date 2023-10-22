@@ -23,8 +23,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "quakedef.h"
 
-qboolean	r_cache_thrash;		// compatability
-
 vec3_t		modelorg, r_entorigin;
 entity_t	*currententity;
 
@@ -34,9 +32,8 @@ int			r_framecount;		// used for dlight push checking
 mplane_t	frustum[4];
 
 //johnfitz -- rendering statistics
-int rs_brushpolys, rs_aliaspolys, rs_skypolys, rs_particles, rs_fogpolys;
+int rs_brushpolys, rs_aliaspolys, rs_skypolys;
 int rs_dynamiclightmaps, rs_brushpasses, rs_aliaspasses, rs_skypasses;
-float rs_megatexels;
 
 //
 // view origin
@@ -67,6 +64,7 @@ cvar_t	r_fullbright = {"r_fullbright","0",CVAR_NONE};
 cvar_t	r_lightmap = {"r_lightmap","0",CVAR_NONE};
 cvar_t	r_shadows = {"r_shadows","0",CVAR_ARCHIVE};
 cvar_t	r_wateralpha = {"r_wateralpha","1",CVAR_ARCHIVE};
+cvar_t	r_litwater = {"r_litwater","1",CVAR_NONE};
 cvar_t	r_dynamic = {"r_dynamic","1",CVAR_ARCHIVE};
 cvar_t	r_novis = {"r_novis","0",CVAR_ARCHIVE};
 
@@ -87,7 +85,7 @@ cvar_t	r_clearcolor = {"r_clearcolor","2",CVAR_ARCHIVE};
 cvar_t	r_drawflat = {"r_drawflat","0",CVAR_NONE};
 cvar_t	r_flatlightstyles = {"r_flatlightstyles", "0", CVAR_NONE};
 cvar_t	gl_fullbrights = {"gl_fullbrights", "1", CVAR_ARCHIVE};
-cvar_t	gl_farclip = {"gl_farclip", "16384", CVAR_ARCHIVE};
+cvar_t	gl_farclip = {"gl_farclip", "65536", CVAR_ARCHIVE};
 cvar_t	gl_overbright = {"gl_overbright", "1", CVAR_ARCHIVE};
 cvar_t	gl_overbright_models = {"gl_overbright_models", "1", CVAR_ARCHIVE};
 cvar_t	r_oldskyleaf = {"r_oldskyleaf", "0", CVAR_NONE};
@@ -125,9 +123,9 @@ static GLuint r_gamma_program;
 static int r_gamma_texture_width, r_gamma_texture_height;
 
 // uniforms used in gamma shader
-static GLuint gammaLoc;
-static GLuint contrastLoc;
-static GLuint textureLoc;
+static GLint  gammaLoc;
+static GLint  contrastLoc;
+static GLint  textureLoc;
 
 /*
 =============
@@ -233,7 +231,7 @@ void GLSLGamma_GammaCorrect (void)
 // draw the texture back to the framebuffer with a fragment shader
 	GL_UseProgramFunc (r_gamma_program);
 	GL_Uniform1fFunc (gammaLoc, vid_gamma.value);
-	GL_Uniform1fFunc (contrastLoc, q_min(2.0, q_max(1.0, vid_contrast.value)));
+	GL_Uniform1fFunc (contrastLoc, q_min(2.0f, q_max(1.0f, vid_contrast.value)));
 	GL_Uniform1iFunc (textureLoc, 0); // use texture unit 0
 
 	glDisable (GL_ALPHA_TEST);
@@ -274,13 +272,14 @@ qboolean R_CullBox (vec3_t emins, vec3_t emaxs)
 	mplane_t *p;
 	byte signbits;
 	float vec[3];
+
 	for (i = 0;i < 4;i++)
 	{
 		p = frustum + i;
 		signbits = p->signbits;
-		vec[0] = ((signbits % 2)<1) ? emaxs[0] : emins[0];
-		vec[1] = ((signbits % 4)<2) ? emaxs[1] : emins[1];
-		vec[2] = ((signbits % 8)<4) ? emaxs[2] : emins[2];
+		vec[0] = ((signbits & 1) ? emins : emaxs)[0];
+		vec[1] = ((signbits & 2) ? emins : emaxs)[1];
+		vec[2] = ((signbits & 4) ? emins : emaxs)[2];
 		if (p->normal[0]*vec[0] + p->normal[1]*vec[1] + p->normal[2]*vec[2] < p->dist)
 			return true;
 	}
@@ -295,21 +294,34 @@ R_CullModelForEntity -- johnfitz -- uses correct bounds based on rotation
 qboolean R_CullModelForEntity (entity_t *e)
 {
 	vec3_t mins, maxs;
+	vec_t scalefactor, *minbounds, *maxbounds;
 
 	if (e->angles[0] || e->angles[2]) //pitch or roll
 	{
-		VectorAdd (e->origin, e->model->rmins, mins);
-		VectorAdd (e->origin, e->model->rmaxs, maxs);
+		minbounds = e->model->rmins;
+		maxbounds = e->model->rmaxs;
 	}
 	else if (e->angles[1]) //yaw
 	{
-		VectorAdd (e->origin, e->model->ymins, mins);
-		VectorAdd (e->origin, e->model->ymaxs, maxs);
+		minbounds = e->model->ymins;
+		maxbounds = e->model->ymaxs;
 	}
 	else //no rotation
 	{
-		VectorAdd (e->origin, e->model->mins, mins);
-		VectorAdd (e->origin, e->model->maxs, maxs);
+		minbounds = e->model->mins;
+		maxbounds = e->model->maxs;
+	}
+
+	scalefactor = ENTSCALE_DECODE(e->scale);
+	if (scalefactor != 1.0f)
+	{
+		VectorMA (e->origin, scalefactor, minbounds, mins);
+		VectorMA (e->origin, scalefactor, maxbounds, maxs);
+	}
+	else
+	{
+		VectorAdd (e->origin, minbounds, mins);
+		VectorAdd (e->origin, maxbounds, maxs);
 	}
 
 	return R_CullBox (mins, maxs);
@@ -320,12 +332,15 @@ qboolean R_CullModelForEntity (entity_t *e)
 R_RotateForEntity -- johnfitz -- modified to take origin and angles instead of pointer to entity
 ===============
 */
-void R_RotateForEntity (vec3_t origin, vec3_t angles)
+void R_RotateForEntity (vec3_t origin, vec3_t angles, unsigned char scale)
 {
+	float scalefactor = ENTSCALE_DECODE(scale);
 	glTranslatef (origin[0],  origin[1],  origin[2]);
 	glRotatef (angles[1],  0, 0, 1);
 	glRotatef (-angles[0],  0, 1, 0);
 	glRotatef (angles[2],  1, 0, 0);
+	if (scalefactor != 1.0f)
+		glScalef(scalefactor, scalefactor, scalefactor);
 }
 
 /*
@@ -387,7 +402,6 @@ assumes side and forward are perpendicular, and normalized
 to turn away from side, use a negative angle
 ===============
 */
-#define DEG2RAD( a ) ( (a) * M_PI_DIV_180 )
 void TurnVector (vec3_t out, const vec3_t forward, const vec3_t side, float angle)
 {
 	float scale_forward, scale_side;
@@ -539,8 +553,6 @@ void R_SetupView (void)
 	V_SetContentsColor (r_viewleaf->contents);
 	V_CalcBlend ();
 
-	r_cache_thrash = false;
-
 	//johnfitz -- calculate r_fovx and r_fovy here
 	r_fovx = r_refdef.fov_x;
 	r_fovy = r_refdef.fov_y;
@@ -662,7 +674,7 @@ R_EmitWirePoint -- johnfitz -- draws a wireframe cross shape for point entities
 */
 void R_EmitWirePoint (vec3_t origin)
 {
-	int size=8;
+	const int size = 8;
 
 	glBegin (GL_LINES);
 	glVertex3f (origin[0]-size, origin[1], origin[2]);
@@ -719,10 +731,10 @@ void R_ShowBoundingBoxes (void)
 	glDisable (GL_CULL_FACE);
 	glColor3f (1,1,1);
 
-	for (i=0, ed=NEXT_EDICT(sv.edicts) ; i<sv.num_edicts ; i++, ed=NEXT_EDICT(ed))
+	for (i=1, ed=NEXT_EDICT(sv.edicts) ; i<sv.num_edicts ; i++, ed=NEXT_EDICT(ed))
 	{
-		if (ed == sv_player)
-			continue; //don't draw player's own bbox
+		if (ed == sv_player || ed->free)
+			continue; //don't draw player's own bbox or freed edicts
 
 //		if (r_showbboxes.value != 2)
 //			if (!SV_VisibleToClient (sv_player, ed, sv.worldmodel))
@@ -1043,7 +1055,7 @@ void R_RenderView (void)
 		time1 = Sys_DoubleTime ();
 
 		//johnfitz -- rendering statistics
-		rs_brushpolys = rs_aliaspolys = rs_skypolys = rs_particles = rs_fogpolys = rs_megatexels =
+		rs_brushpolys = rs_aliaspolys = rs_skypolys =
 		rs_dynamiclightmaps = rs_aliaspasses = rs_skypasses = rs_brushpasses = 0;
 	}
 	else if (gl_finish.value)

@@ -260,7 +260,7 @@ Cmd_Exec_f
 */
 void Cmd_Exec_f (void)
 {
-	char	*f;
+	const char	*f;
 	int		mark;
 
 	if (Cmd_Argc () != 2)
@@ -270,7 +270,7 @@ void Cmd_Exec_f (void)
 	}
 
 	mark = Hunk_LowMark ();
-	f = (char *)COM_LoadHunkFile (Cmd_Argv(1), NULL);
+	f = (const char *)COM_LoadHunkFile (Cmd_Argv(1), NULL);
 	if (!f && !strcmp(Cmd_Argv(1), "default.cfg")) {
 		f = default_cfg;	/* see above.. */
 	}
@@ -282,7 +282,9 @@ void Cmd_Exec_f (void)
 	Con_Printf ("execing %s\n",Cmd_Argv(1));
 
 	Cbuf_InsertText (f);
+	if (f != default_cfg) {
 	Hunk_FreeToLowMark (mark);
+	}
 }
 
 
@@ -808,7 +810,6 @@ void	Cmd_ExecuteString (const char *text, cmd_source_t src)
 // check cvars
 	if (!Cvar_Command ())
 		Con_Printf ("Unknown command \"%s\"\n", Cmd_Argv(0));
-
 }
 
 
@@ -857,10 +858,10 @@ int Cmd_CheckParm (const char *parm)
 	int i;
 
 	if (!parm)
-		Sys_Error ("Cmd_CheckParm: NULL");
+		Sys_Error ("Cmd_CheckParm: null input\n");
 
 	for (i = 1; i < Cmd_Argc (); i++)
-		if (! q_strcasecmp (parm, Cmd_Argv (i)))
+		if ( !q_strcasecmp (parm, Cmd_Argv (i)) )
 			return i;
 
 	return 0;

@@ -49,6 +49,19 @@ mspriteframe_t *R_GetSpriteFrame (entity_t *currentent)
 	{
 		pspriteframe = psprite->frames[frame].frameptr;
 	}
+	else if (psprite->frames[frame].type == SPR_ANGLED)
+	{
+		// erysdren - angled sprites code backported from FTEQW
+		vec3_t axis[3];
+		AngleVectors(currententity->angles, axis[0], axis[1], axis[2]);
+		{
+			float f = DotProduct(vpn, axis[0]);
+			float r = DotProduct(vright, axis[0]);
+			int dir = (atan2(r, f)+1.125*M_PI)*(4/M_PI);
+			pspritegroup = (mspritegroup_t *)psprite->frames[frame].frameptr;
+			pspriteframe = pspritegroup->frames[dir&7];
+		}
+	}
 	else
 	{
 		pspritegroup = (mspritegroup_t *)psprite->frames[frame].frameptr;
@@ -62,7 +75,7 @@ mspriteframe_t *R_GetSpriteFrame (entity_t *currentent)
 	// are positive, so we don't have to worry about division by 0
 		targettime = time - ((int)(time / fullinterval)) * fullinterval;
 
-		for (i=0 ; i<(numframes-1) ; i++)
+		for (i = 0; i < (numframes-1); i++)
 		{
 			if (pintervals[i] > targettime)
 				break;
@@ -86,8 +99,7 @@ void R_DrawSpriteModel (entity_t *e)
 	mspriteframe_t	*frame;
 	float			*s_up, *s_right;
 	float			angle, sr, cr;
-
-	//TODO: frustum cull it?
+	float			scale = ENTSCALE_DECODE(e->scale);
 
 	frame = R_GetSpriteFrame (e);
 	psprite = (msprite_t *) currententity->model->cache.data;
@@ -98,8 +110,10 @@ void R_DrawSpriteModel (entity_t *e)
 		v_up[0] = 0;
 		v_up[1] = 0;
 		v_up[2] = 1;
+		CrossProduct(vpn, v_up, v_right);
+		VectorNormalizeFast(v_right);
 		s_up = v_up;
-		s_right = vright;
+		s_right = v_right;
 		break;
 	case SPR_FACING_UPRIGHT: //faces camera origin, up is towards the heavens
 		VectorSubtract(currententity->origin, r_origin, v_forward);
@@ -154,23 +168,23 @@ void R_DrawSpriteModel (entity_t *e)
 	glBegin (GL_TRIANGLE_FAN); //was GL_QUADS, but changed to support r_showtris
 
 	glTexCoord2f (0, frame->tmax);
-	VectorMA (e->origin, frame->down, s_up, point);
-	VectorMA (point, frame->left, s_right, point);
+	VectorMA (e->origin, frame->down * scale, s_up, point);
+	VectorMA (point, frame->left * scale, s_right, point);
 	glVertex3fv (point);
 
 	glTexCoord2f (0, 0);
-	VectorMA (e->origin, frame->up, s_up, point);
-	VectorMA (point, frame->left, s_right, point);
+	VectorMA (e->origin, frame->up * scale, s_up, point);
+	VectorMA (point, frame->left * scale, s_right, point);
 	glVertex3fv (point);
 
 	glTexCoord2f (frame->smax, 0);
-	VectorMA (e->origin, frame->up, s_up, point);
-	VectorMA (point, frame->right, s_right, point);
+	VectorMA (e->origin, frame->up * scale, s_up, point);
+	VectorMA (point, frame->right * scale, s_right, point);
 	glVertex3fv (point);
 
 	glTexCoord2f (frame->smax, frame->tmax);
-	VectorMA (e->origin, frame->down, s_up, point);
-	VectorMA (point, frame->right, s_right, point);
+	VectorMA (e->origin, frame->down * scale, s_up, point);
+	VectorMA (point, frame->right * scale, s_right, point);
 	glVertex3fv (point);
 
 	glEnd ();

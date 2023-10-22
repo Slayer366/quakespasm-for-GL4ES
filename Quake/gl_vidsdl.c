@@ -64,8 +64,6 @@ typedef struct {
 	int			bpp;
 } vmode_t;
 
-typedef void* (* glGetProcAddress)(const char *name);
-
 static const char *gl_vendor;
 static const char *gl_renderer;
 static const char *gl_version;
@@ -103,6 +101,7 @@ modestate_t	modestate = MS_UNINIT;
 qboolean	scr_skipupdate;
 
 qboolean gl_mtexable = false;
+qboolean gl_packed_pixels = false;
 qboolean gl_texture_env_combine = false; //johnfitz
 qboolean gl_texture_env_add = false; //johnfitz
 qboolean gl_swap_control = false; //johnfitz
@@ -149,6 +148,8 @@ QS_PFNGLUNIFORM1FPROC GL_Uniform1fFunc = NULL; //ericw
 QS_PFNGLUNIFORM3FPROC GL_Uniform3fFunc = NULL; //ericw
 QS_PFNGLUNIFORM4FPROC GL_Uniform4fFunc = NULL; //ericw
 
+QS_PFNGENERATEMIPMAP GL_GenerateMipmap = NULL;
+
 //====================================
 
 //johnfitz -- new cvars
@@ -157,7 +158,7 @@ static cvar_t	vid_width = {"vid_width", "800", CVAR_ARCHIVE};		// QuakeSpasm, wa
 static cvar_t	vid_height = {"vid_height", "600", CVAR_ARCHIVE};	// QuakeSpasm, was 480
 static cvar_t	vid_bpp = {"vid_bpp", "16", CVAR_ARCHIVE};
 static cvar_t	vid_refreshrate = {"vid_refreshrate", "60", CVAR_ARCHIVE};
-static cvar_t	vid_vsync = {"vid_vsync", "0", CVAR_ARCHIVE};
+static cvar_t	vid_vsync = {"vid_vsync", "1", CVAR_ARCHIVE};
 static cvar_t	vid_fsaa = {"vid_fsaa", "0", CVAR_ARCHIVE}; // QuakeSpasm
 static cvar_t	vid_desktopfullscreen = {"vid_desktopfullscreen", "0", CVAR_ARCHIVE}; // QuakeSpasm
 static cvar_t	vid_borderless = {"vid_borderless", "0", CVAR_ARCHIVE}; // QuakeSpasm
@@ -674,6 +675,7 @@ static qboolean VID_SetMode (int width, int height, int refreshrate, int bpp, qb
 	}
 
 	SDL_ShowWindow (draw_context);
+	SDL_RaiseWindow (draw_context);
 
 	/* Create GL context if needed */
 	if (!gl_context) {
@@ -995,15 +997,15 @@ static qboolean GL_ParseExtensionList (const char *list, const char *name)
 	return false;
 }
 
-static void* getProcAddress(const char *name){
-	void* result = NULL;
-#ifdef USE_GL4ES
-	result = (void *) glXGetProcAddress((const GLubyte *) name);
-#else
-	result = SDL_GL_GetProcAddress(name);
-#endif
-	return result;
-}
+//static void* getProcAddress(const char *name){
+//	void* result = NULL;
+//#ifdef USE_GL4ES
+//	result = (void *) glXGetProcAddress((const GLubyte *) name);
+//#else
+//	result = SDL_GL_GetProcAddress(name);
+//#endif
+//	return result;
+//}
 
 static void GL_CheckExtensions (void)
 {
@@ -1017,11 +1019,11 @@ static void GL_CheckExtensions (void)
 		Con_Warning ("OpenGL version < 1.5, skipping ARB_vertex_buffer_object check\n");
 	else
 	{
-		GL_BindBufferFunc = (PFNGLBINDBUFFERARBPROC) getProcAddress("glBindBufferARB");
-		GL_BufferDataFunc = (PFNGLBUFFERDATAARBPROC) getProcAddress("glBufferDataARB");
-		GL_BufferSubDataFunc = (PFNGLBUFFERSUBDATAARBPROC) getProcAddress("glBufferSubDataARB");
-		GL_DeleteBuffersFunc = (PFNGLDELETEBUFFERSARBPROC) getProcAddress("glDeleteBuffersARB");
-		GL_GenBuffersFunc = (PFNGLGENBUFFERSARBPROC) getProcAddress("glGenBuffersARB");
+		GL_BindBufferFunc = (PFNGLBINDBUFFERARBPROC) SDL_GL_GetProcAddress("glBindBufferARB");
+		GL_BufferDataFunc = (PFNGLBUFFERDATAARBPROC) SDL_GL_GetProcAddress("glBufferDataARB");
+		GL_BufferSubDataFunc = (PFNGLBUFFERSUBDATAARBPROC) SDL_GL_GetProcAddress("glBufferSubDataARB");
+		GL_DeleteBuffersFunc = (PFNGLDELETEBUFFERSARBPROC) SDL_GL_GetProcAddress("glDeleteBuffersARB");
+		GL_GenBuffersFunc = (PFNGLGENBUFFERSARBPROC) SDL_GL_GetProcAddress("glGenBuffersARB");
 		if (GL_BindBufferFunc && GL_BufferDataFunc && GL_BufferSubDataFunc && GL_DeleteBuffersFunc && GL_GenBuffersFunc)
 		{
 			Con_Printf("FOUND: ARB_vertex_buffer_object\n");
@@ -1039,9 +1041,9 @@ static void GL_CheckExtensions (void)
 		Con_Warning ("Mutitexture disabled at command line\n");
 	else if (GL_ParseExtensionList(gl_extensions, "GL_ARB_multitexture"))
 	{
-		GL_MTexCoord2fFunc = (PFNGLMULTITEXCOORD2FARBPROC) getProcAddress("glMultiTexCoord2fARB");
-		GL_SelectTextureFunc = (PFNGLACTIVETEXTUREARBPROC) getProcAddress("glActiveTextureARB");
-		GL_ClientActiveTextureFunc = (PFNGLCLIENTACTIVETEXTUREARBPROC) getProcAddress("glClientActiveTextureARB");
+		GL_MTexCoord2fFunc = (PFNGLMULTITEXCOORD2FARBPROC) SDL_GL_GetProcAddress("glMultiTexCoord2fARB");
+		GL_SelectTextureFunc = (PFNGLACTIVETEXTUREARBPROC) SDL_GL_GetProcAddress("glActiveTextureARB");
+		GL_ClientActiveTextureFunc = (PFNGLCLIENTACTIVETEXTUREARBPROC) SDL_GL_GetProcAddress("glClientActiveTextureARB");
 		if (GL_MTexCoord2fFunc && GL_SelectTextureFunc && GL_ClientActiveTextureFunc)
 		{
 			Con_Printf("FOUND: ARB_multitexture\n");
@@ -1197,29 +1199,29 @@ static void GL_CheckExtensions (void)
 		Con_Warning ("GLSL disabled at command line\n");
 	else if (gl_version_major >= 2)
 	{
-		GL_CreateShaderFunc = (QS_PFNGLCREATESHADERPROC) getProcAddress("glCreateShader");
-		GL_DeleteShaderFunc = (QS_PFNGLDELETESHADERPROC) getProcAddress("glDeleteShader");
-		GL_DeleteProgramFunc = (QS_PFNGLDELETEPROGRAMPROC) getProcAddress("glDeleteProgram");
-		GL_ShaderSourceFunc = (QS_PFNGLSHADERSOURCEPROC) getProcAddress("glShaderSource");
-		GL_CompileShaderFunc = (QS_PFNGLCOMPILESHADERPROC) getProcAddress("glCompileShader");
-		GL_GetShaderivFunc = (QS_PFNGLGETSHADERIVPROC) getProcAddress("glGetShaderiv");
-		GL_GetShaderInfoLogFunc = (QS_PFNGLGETSHADERINFOLOGPROC) getProcAddress("glGetShaderInfoLog");
-		GL_GetProgramivFunc = (QS_PFNGLGETPROGRAMIVPROC) getProcAddress("glGetProgramiv");
-		GL_GetProgramInfoLogFunc = (QS_PFNGLGETPROGRAMINFOLOGPROC) getProcAddress("glGetProgramInfoLog");
-		GL_CreateProgramFunc = (QS_PFNGLCREATEPROGRAMPROC) getProcAddress("glCreateProgram");
-		GL_AttachShaderFunc = (QS_PFNGLATTACHSHADERPROC) getProcAddress("glAttachShader");
-		GL_LinkProgramFunc = (QS_PFNGLLINKPROGRAMPROC) getProcAddress("glLinkProgram");
-		GL_BindAttribLocationFunc = (QS_PFNGLBINDATTRIBLOCATIONFUNC) getProcAddress("glBindAttribLocation");
-		GL_UseProgramFunc = (QS_PFNGLUSEPROGRAMPROC) getProcAddress("glUseProgram");
-		GL_GetAttribLocationFunc = (QS_PFNGLGETATTRIBLOCATIONPROC) getProcAddress("glGetAttribLocation");
-		GL_VertexAttribPointerFunc = (QS_PFNGLVERTEXATTRIBPOINTERPROC) getProcAddress("glVertexAttribPointer");
-		GL_EnableVertexAttribArrayFunc = (QS_PFNGLENABLEVERTEXATTRIBARRAYPROC) getProcAddress("glEnableVertexAttribArray");
-		GL_DisableVertexAttribArrayFunc = (QS_PFNGLDISABLEVERTEXATTRIBARRAYPROC) getProcAddress("glDisableVertexAttribArray");
-		GL_GetUniformLocationFunc = (QS_PFNGLGETUNIFORMLOCATIONPROC) getProcAddress("glGetUniformLocation");
-		GL_Uniform1iFunc = (QS_PFNGLUNIFORM1IPROC) getProcAddress("glUniform1i");
-		GL_Uniform1fFunc = (QS_PFNGLUNIFORM1FPROC) getProcAddress("glUniform1f");
-		GL_Uniform3fFunc = (QS_PFNGLUNIFORM3FPROC) getProcAddress("glUniform3f");
-		GL_Uniform4fFunc = (QS_PFNGLUNIFORM4FPROC) getProcAddress("glUniform4f");
+		GL_CreateShaderFunc = (QS_PFNGLCREATESHADERPROC) SDL_GL_GetProcAddress("glCreateShader");
+		GL_DeleteShaderFunc = (QS_PFNGLDELETESHADERPROC) SDL_GL_GetProcAddress("glDeleteShader");
+		GL_DeleteProgramFunc = (QS_PFNGLDELETEPROGRAMPROC) SDL_GL_GetProcAddress("glDeleteProgram");
+		GL_ShaderSourceFunc = (QS_PFNGLSHADERSOURCEPROC) SDL_GL_GetProcAddress("glShaderSource");
+		GL_CompileShaderFunc = (QS_PFNGLCOMPILESHADERPROC) SDL_GL_GetProcAddress("glCompileShader");
+		GL_GetShaderivFunc = (QS_PFNGLGETSHADERIVPROC) SDL_GL_GetProcAddress("glGetShaderiv");
+		GL_GetShaderInfoLogFunc = (QS_PFNGLGETSHADERINFOLOGPROC) SDL_GL_GetProcAddress("glGetShaderInfoLog");
+		GL_GetProgramivFunc = (QS_PFNGLGETPROGRAMIVPROC) SDL_GL_GetProcAddress("glGetProgramiv");
+		GL_GetProgramInfoLogFunc = (QS_PFNGLGETPROGRAMINFOLOGPROC) SDL_GL_GetProcAddress("glGetProgramInfoLog");
+		GL_CreateProgramFunc = (QS_PFNGLCREATEPROGRAMPROC) SDL_GL_GetProcAddress("glCreateProgram");
+		GL_AttachShaderFunc = (QS_PFNGLATTACHSHADERPROC) SDL_GL_GetProcAddress("glAttachShader");
+		GL_LinkProgramFunc = (QS_PFNGLLINKPROGRAMPROC) SDL_GL_GetProcAddress("glLinkProgram");
+		GL_BindAttribLocationFunc = (QS_PFNGLBINDATTRIBLOCATIONFUNC) SDL_GL_GetProcAddress("glBindAttribLocation");
+		GL_UseProgramFunc = (QS_PFNGLUSEPROGRAMPROC) SDL_GL_GetProcAddress("glUseProgram");
+		GL_GetAttribLocationFunc = (QS_PFNGLGETATTRIBLOCATIONPROC) SDL_GL_GetProcAddress("glGetAttribLocation");
+		GL_VertexAttribPointerFunc = (QS_PFNGLVERTEXATTRIBPOINTERPROC) SDL_GL_GetProcAddress("glVertexAttribPointer");
+		GL_EnableVertexAttribArrayFunc = (QS_PFNGLENABLEVERTEXATTRIBARRAYPROC) SDL_GL_GetProcAddress("glEnableVertexAttribArray");
+		GL_DisableVertexAttribArrayFunc = (QS_PFNGLDISABLEVERTEXATTRIBARRAYPROC) SDL_GL_GetProcAddress("glDisableVertexAttribArray");
+		GL_GetUniformLocationFunc = (QS_PFNGLGETUNIFORMLOCATIONPROC) SDL_GL_GetProcAddress("glGetUniformLocation");
+		GL_Uniform1iFunc = (QS_PFNGLUNIFORM1IPROC) SDL_GL_GetProcAddress("glUniform1i");
+		GL_Uniform1fFunc = (QS_PFNGLUNIFORM1FPROC) SDL_GL_GetProcAddress("glUniform1f");
+		GL_Uniform3fFunc = (QS_PFNGLUNIFORM3FPROC) SDL_GL_GetProcAddress("glUniform3f");
+		GL_Uniform4fFunc = (QS_PFNGLUNIFORM4FPROC) SDL_GL_GetProcAddress("glUniform4f");
 
 		if (GL_CreateShaderFunc &&
 			GL_DeleteShaderFunc &&
@@ -1257,7 +1259,6 @@ static void GL_CheckExtensions (void)
 	{
 		Con_Warning ("OpenGL version < 2, GLSL not available\n");
 	}
-	
 	// GLSL gamma
 	//
 	if (COM_CheckParm("-noglslgamma"))
@@ -1265,12 +1266,12 @@ static void GL_CheckExtensions (void)
 	else if (gl_glsl_able)
 	{
 		gl_glsl_gamma_able = true;
+		Con_Printf("Enabled: GLSL gamma\n");
 	}
 	else
 	{
 		Con_Warning ("GLSL gamma not available, using hardware gamma\n");
 	}
-    
     // GLSL alias model rendering
     //
 	if (COM_CheckParm("-noglslalias"))
@@ -1278,10 +1279,58 @@ static void GL_CheckExtensions (void)
 	else if (gl_glsl_able && gl_vbo_able && gl_max_texture_units >= 3)
 	{
 		gl_glsl_alias_able = true;
+		Con_Printf("Enabled: GLSL alias model rendering\n");
 	}
 	else
 	{
 		Con_Warning ("GLSL alias model rendering not available, using Fitz renderer\n");
+	}
+
+	// packed_pixels
+	//
+	if (COM_CheckParm("-nopackedpixels"))
+		Con_Warning ("EXT_packed_pixels disabled at command line\n");
+	else if (gl_glsl_alias_able)
+	{
+		gl_packed_pixels = true;
+		Con_Printf("Enabled: EXT_packed_pixels\n");
+	}
+	#if 0 /* Disabling for non-GLSL path, needs more surgery. */
+	else if (GL_ParseExtensionList(gl_extensions, "GL_APPLE_packed_pixels"))
+	{
+		Con_Printf("FOUND: APPLE_packed_pixels\n");
+		gl_packed_pixels = true;
+	}
+	else if (GL_ParseExtensionList(gl_extensions, "GL_EXT_packed_pixels"))
+	{
+		Con_Printf("FOUND: EXT_packed_pixels\n");
+		gl_packed_pixels = true;
+	}
+	else
+	{
+		Con_Warning ("packed_pixels not supported\n");
+	}
+	#endif
+
+	// glGenerateMipmap for warp textures
+	if (COM_CheckParm("-nowarpmipmaps"))
+		Con_Warning ("glGenerateMipmap disabled at command line\n");
+	else
+	{
+		if (gl_version_major >= 3 || GL_ParseExtensionList(gl_extensions, "GL_ARB_framebuffer_object"))
+		{
+			GL_GenerateMipmap = (QS_PFNGENERATEMIPMAP) SDL_GL_GetProcAddress("glGenerateMipmap");
+			if (GL_GenerateMipmap != NULL)
+				Con_Printf ("FOUND: glGenerateMipmap\n");
+		}
+		else if (GL_ParseExtensionList(gl_extensions, "GL_EXT_framebuffer_object"))
+		{
+			GL_GenerateMipmap = (QS_PFNGENERATEMIPMAP) SDL_GL_GetProcAddress("glGenerateMipmapEXT");
+			if (GL_GenerateMipmap != NULL)
+				Con_Printf ("FOUND: glGenerateMipmapEXT\n");
+		}
+		if (GL_GenerateMipmap == NULL)
+			Con_Warning ("glGenerateMipmap not available, liquids won't have mipmaps\n");
 	}
 }
 
@@ -1399,12 +1448,13 @@ void	VID_Shutdown (void)
 	if (vid_initialized)
 	{
 		VID_Gamma_Shutdown (); //johnfitz
-
+#if defined(USE_SDL2)
+		SDL_GL_DeleteContext(gl_context);
+		gl_context = NULL;
+		SDL_DestroyWindow(draw_context);
+#endif
 		SDL_QuitSubSystem(SDL_INIT_VIDEO);
 		draw_context = NULL;
-#if defined(USE_SDL2)
-		gl_context = NULL;
-#endif
 		PL_VID_Shutdown();
 	}
 }
@@ -1536,7 +1586,7 @@ static void VID_InitModelist (void)
 
 	// enumerate fullscreen modes
 	flags = DEFAULT_SDL_FLAGS | SDL_FULLSCREEN;
-	for (i = 0; i < (int)(sizeof(bpps)/sizeof(bpps[0])); i++)
+	for (i = 0; i < (int)Q_COUNTOF(bpps); i++)
 	{
 		if (nummodes >= MAX_MODE_LIST)
 			break;
@@ -1600,7 +1650,7 @@ void	VID_Init (void)
 					 "vid_fsaa",
 					 "vid_desktopfullscreen",
 					 "vid_borderless"};
-#define num_readvars	( sizeof(read_vars)/sizeof(read_vars[0]) )
+#define num_readvars	Q_COUNTOF(read_vars)
 
 	Cvar_RegisterVariable (&vid_fullscreen); //johnfitz
 	Cvar_RegisterVariable (&vid_width); //johnfitz
@@ -1991,11 +2041,11 @@ regenerates rate list based on current vid_width, vid_height and vid_bpp
 */
 static void VID_Menu_RebuildRateList (void)
 {
-	int i,j,r;
-	
-	vid_menu_numrates=0;
-	
-	for (i=0;i<nummodes;i++)
+	int i, j, r;
+
+	vid_menu_numrates = 0;
+
+	for (i = 0; i < nummodes; i++)
 	{
 		//rate list is limited to rates available with current width/height/bpp
 		if (modelist[i].width != vid_width.value ||
@@ -2005,13 +2055,13 @@ static void VID_Menu_RebuildRateList (void)
 		
 		r = modelist[i].refreshrate;
 		
-		for (j=0;j<vid_menu_numrates;j++)
+		for (j = 0; j < vid_menu_numrates; j++)
 		{
 			if (vid_menu_rates[j] == r)
 				break;
 		}
 		
-		if (j==vid_menu_numrates)
+		if (j == vid_menu_numrates)
 		{
 			vid_menu_rates[j] = r;
 			vid_menu_numrates++;
@@ -2026,11 +2076,11 @@ static void VID_Menu_RebuildRateList (void)
 	}
 	
 	//if vid_refreshrate is not in the new list, change vid_refreshrate
-	for (i=0;i<vid_menu_numrates;i++)
+	for (i = 0; i < vid_menu_numrates; i++)
 		if (vid_menu_rates[i] == (int)(vid_refreshrate.value))
 			break;
 	
-	if (i==vid_menu_numrates)
+	if (i == vid_menu_numrates)
 		Cvar_SetValue ("vid_refreshrate",(float)vid_menu_rates[0]);
 }
 
@@ -2122,22 +2172,22 @@ static void VID_Menu_ChooseNextRate (int dir)
 {
 	int i;
 	
-	for (i=0;i<vid_menu_numrates;i++)
+	for (i = 0; i < vid_menu_numrates; i++)
 	{
 		if (vid_menu_rates[i] == vid_refreshrate.value)
 			break;
 	}
 	
-	if (i==vid_menu_numrates) //can't find it in list
+	if (i == vid_menu_numrates) //can't find it in list
 	{
 		i = 0;
 	}
 	else
 	{
-		i+=dir;
-		if (i>=vid_menu_numrates)
+		i += dir;
+		if (i >= vid_menu_numrates)
 			i = 0;
-		else if (i<0)
+		else if (i < 0)
 			i = vid_menu_numrates-1;
 	}
 	
@@ -2354,4 +2404,3 @@ static void VID_Menu_f (void)
 	VID_Menu_RebuildBppList ();
 	VID_Menu_RebuildRateList ();
 }
-

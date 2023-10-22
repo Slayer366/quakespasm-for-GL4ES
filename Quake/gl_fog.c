@@ -32,18 +32,18 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define DEFAULT_DENSITY 0.0
 #define DEFAULT_GRAY 0.3
 
-float fog_density;
-float fog_red;
-float fog_green;
-float fog_blue;
+static float fog_density;
+static float fog_red;
+static float fog_green;
+static float fog_blue;
 
-float old_density;
-float old_red;
-float old_green;
-float old_blue;
+static float old_density;
+static float old_red;
+static float old_green;
+static float old_blue;
 
-float fade_time; //duration of fade
-float fade_done; //time when fade will be done
+static float fade_time; //duration of fade
+static float fade_done; //time when fade will be done
 
 /*
 =============
@@ -100,7 +100,8 @@ void Fog_ParseServerMessage (void)
 	red = MSG_ReadByte() / 255.0;
 	green = MSG_ReadByte() / 255.0;
 	blue = MSG_ReadByte() / 255.0;
-	time = q_max(0.0, MSG_ReadShort() / 100.0);
+	time = MSG_ReadShort() / 100.0;
+	if (time < 0.0f) time = 0.0f;
 
 	Fog_Update (density, red, green, blue, time);
 }
@@ -114,6 +115,8 @@ handle the 'fog' console command
 */
 void Fog_FogCommand_f (void)
 {
+	float d, r, g, b, t;
+
 	switch (Cmd_Argc())
 	{
 	default:
@@ -127,43 +130,52 @@ void Fog_FogCommand_f (void)
 		Con_Printf("   \"red\" is \"%f\"\n", fog_red);
 		Con_Printf("   \"green\" is \"%f\"\n", fog_green);
 		Con_Printf("   \"blue\" is \"%f\"\n", fog_blue);
-		break;
+		return;
 	case 2:
-		Fog_Update(q_max(0.0, atof(Cmd_Argv(1))),
-				   fog_red,
-				   fog_green,
-				   fog_blue,
-				   0.0);
+		d = Q_atof(Cmd_Argv(1));
+		t = 0.0f;
+		r = fog_red;
+		g = fog_green;
+		b = fog_blue;
 		break;
 	case 3: //TEST
-		Fog_Update(q_max(0.0, atof(Cmd_Argv(1))),
-				   fog_red,
-				   fog_green,
-				   fog_blue,
-				   atof(Cmd_Argv(2)));
+		d = Q_atof(Cmd_Argv(1));
+		t = Q_atof(Cmd_Argv(2));
+		r = fog_red;
+		g = fog_green;
+		b = fog_blue;
 		break;
 	case 4:
-		Fog_Update(fog_density,
-				   CLAMP(0.0, atof(Cmd_Argv(1)), 1.0),
-				   CLAMP(0.0, atof(Cmd_Argv(2)), 1.0),
-				   CLAMP(0.0, atof(Cmd_Argv(3)), 1.0),
-				   0.0);
+		d = fog_density;
+		t = 0.0f;
+		r = Q_atof(Cmd_Argv(1));
+		g = Q_atof(Cmd_Argv(2));
+		b = Q_atof(Cmd_Argv(3));
 		break;
 	case 5:
-		Fog_Update(q_max(0.0, atof(Cmd_Argv(1))),
-				   CLAMP(0.0, atof(Cmd_Argv(2)), 1.0),
-				   CLAMP(0.0, atof(Cmd_Argv(3)), 1.0),
-				   CLAMP(0.0, atof(Cmd_Argv(4)), 1.0),
-				   0.0);
+		d = Q_atof(Cmd_Argv(1));
+		r = Q_atof(Cmd_Argv(2));
+		g = Q_atof(Cmd_Argv(3));
+		b = Q_atof(Cmd_Argv(4));
+		t = 0.0f;
 		break;
 	case 6: //TEST
-		Fog_Update(q_max(0.0, atof(Cmd_Argv(1))),
-				   CLAMP(0.0, atof(Cmd_Argv(2)), 1.0),
-				   CLAMP(0.0, atof(Cmd_Argv(3)), 1.0),
-				   CLAMP(0.0, atof(Cmd_Argv(4)), 1.0),
-				   atof(Cmd_Argv(5)));
+		d = Q_atof(Cmd_Argv(1));
+		r = Q_atof(Cmd_Argv(2));
+		g = Q_atof(Cmd_Argv(3));
+		b = Q_atof(Cmd_Argv(4));
+		t = Q_atof(Cmd_Argv(5));
 		break;
 	}
+
+	if      (d < 0.0f) d = 0.0f;
+	if      (r < 0.0f) r = 0.0f;
+	else if (r > 1.0f) r = 1.0f;
+	if      (g < 0.0f) g = 0.0f;
+	else if (g > 1.0f) g = 1.0f;
+	if      (b < 0.0f) b = 0.0f;
+	else if (b > 1.0f) b = 1.0f;
+	Fog_Update(d, r, g, b, t);
 }
 
 /*
@@ -210,7 +222,7 @@ void Fog_ParseWorldspawn (void)
 			q_strlcpy(key, com_token, sizeof(key));
 		while (key[0] && key[strlen(key)-1] == ' ') // remove trailing spaces
 			key[strlen(key)-1] = 0;
-		data = COM_Parse(data);
+		data = COM_ParseEx(data, CPE_ALLOWTRUNC);
 		if (!data)
 			return; // error
 		q_strlcpy(value, com_token, sizeof(value));
@@ -251,9 +263,14 @@ float *Fog_GetColor (void)
 		c[3] = 1.0;
 	}
 
+	for (i = 0; i < 3; i++) {
+		c[i] = CLAMP (0.f, c[i], 1.f);
+	}
+
 	//find closest 24-bit RGB value, so solid-colored sky can match the fog perfectly
-	for (i=0;i<3;i++)
+	for (i = 0; i < 3; i++) {
 		c[i] = (float)(Q_rint(c[i] * 255)) / 255.0f;
+	}
 
 	return c;
 }

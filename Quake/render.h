@@ -73,12 +73,12 @@ typedef struct entity_s
 	int						dlightbits;
 
 // FIXME: could turn these into a union
-	int						trivial_accept;
 	struct mnode_s			*topnode;		// for bmodels, first world node
 											//  that splits bmodel, or NULL if
 											//  not split
 
 	byte					alpha;			//johnfitz -- alpha
+	byte					scale;
 	byte					lerpflags;		//johnfitz -- lerping
 	float					lerpstart;		//johnfitz -- animation lerping
 	float					lerptime;		//johnfitz -- animation lerping
@@ -166,7 +166,6 @@ void R_PushDlights (void);
 // surface cache related
 //
 extern	int		reinit_surfcache;	// if 1, surface cache is currently empty and
-extern qboolean	r_cache_thrash;	// set if thrashing the surface cache
 
 int	D_SurfaceCacheForRes (int width, int height);
 void D_FlushCaches (void);
@@ -175,4 +174,3 @@ void D_InitCaches (void *buffer, int size);
 void R_SetVrect (vrect_t *pvrect, vrect_t *pvrectin, int lineadj);
 
 #endif	/* _QUAKE_RENDER_H */
-

@@ -67,10 +67,6 @@ cvar_t	gl_cshiftpercent_powerup = {"gl_cshiftpercent_powerup", "100", CVAR_NONE}
 
 cvar_t	r_viewmodel_quake = {"r_viewmodel_quake", "0", CVAR_ARCHIVE};
 
-float	v_dmg_time, v_dmg_roll, v_dmg_pitch;
-
-extern	int			in_forward, in_forward2, in_back;
-
 vec3_t	v_punchangles[2]; //johnfitz -- copied from cl.punchangle.  0 is current, 1 is previous value. never the same unless map just loaded
 
 /*
@@ -252,10 +248,12 @@ void V_DriftPitch (void)
 ==============================================================================
 */
 
-cshift_t	cshift_empty = { {130,80,50}, 0 };
-cshift_t	cshift_water = { {130,80,50}, 128 };
-cshift_t	cshift_slime = { {0,25,5}, 150 };
-cshift_t	cshift_lava = { {255,80,0}, 150 };
+static cshift_t cshift_empty = { {130,80,50}, 0 };
+static cshift_t cshift_water = { {130,80,50}, 128 };
+static cshift_t cshift_slime = { {0,25,5}, 150 };
+static cshift_t cshift_lava = { {255,80,0}, 150 };
+
+static float v_dmg_time, v_dmg_roll, v_dmg_pitch;
 
 float		v_blend[4];		// rgba 0.0 - 1.0
 
@@ -547,9 +545,10 @@ void V_PolyBlend (void)
 	glMatrixMode(GL_MODELVIEW);
     glLoadIdentity ();
 
-	glColor4fv (v_blend);
-
 	glBegin (GL_QUADS);
+
+	glColor4fv (v_blend); // inside glBegin / glEnd to workaround an AMD driver bug
+
 	glVertex2f (0,0);
 	glVertex2f (1, 0);
 	glVertex2f (1, 1);
@@ -819,9 +818,18 @@ void V_CalcRefdef (void)
 			view->origin[2] += 0.5;
 	}
 
+	if (ent->lerpflags & LERP_FINISH)
+	{
+		view->lerpflags |= LERP_FINISH;
+		view->lerpfinish = ent->lerpfinish;
+	}
+	else
+		view->lerpflags &= ~LERP_FINISH;
+
 	view->model = cl.model_precache[cl.stats[STAT_WEAPON]];
 	view->frame = cl.stats[STAT_WEAPONFRAME];
 	view->colormap = vid.colormap;
+	view->scale = ENTSCALE_DEFAULT;
 
 //johnfitz -- v_gunkick
 	if (v_gunkick.value == 1) //original quake kick
@@ -868,6 +876,20 @@ void V_CalcRefdef (void)
 
 	if (chase_active.value)
 		Chase_UpdateForDrawing (); //johnfitz
+}
+
+/*
+==================
+V_RestoreAngles
+
+Resets the viewentity angles to the last values received from the server
+(undoing the manual adjustments performed by V_CalcRefdef)
+==================
+*/
+void V_RestoreAngles (void)
+{
+	entity_t *ent = &cl_entities[cl.viewentity];
+	VectorCopy (ent->msg_angles[0], ent->angles);
 }
 
 /*
