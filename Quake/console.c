@@ -1092,6 +1092,10 @@ void Con_DrawNotify (void)
 
 	for (i = con_current-NUM_CON_TIMES+1; i <= con_current; i++)
 	{
+
+#ifdef USE_GL4ES
+	glEnable(GL_BLEND);
+#endif
 		if (i < 0)
 			continue;
 		time = con_times[i % NUM_CON_TIMES];
@@ -1110,10 +1114,19 @@ void Con_DrawNotify (void)
 		v += 8;
 
 		scr_tileclear_updates = 0; //johnfitz
+
+#ifdef USE_GL4ES
+	glDisable(GL_BLEND);
+#endif
+
 	}
 
 	if (key_dest == key_message)
 	{
+
+#ifdef USE_GL4ES
+	glEnable(GL_BLEND);
+#endif
 		clearnotify = 0;
 
 		if (chat_team)
@@ -1143,6 +1156,11 @@ void Con_DrawNotify (void)
 		v += 8;
 
 		scr_tileclear_updates = 0; //johnfitz
+
+#ifdef USE_GL4ES
+	glDisable(GL_BLEND);
+#endif
+
 	}
 }
 

@@ -196,9 +196,17 @@ void SCR_DrawCenterString (void) //actually do the drawing
 		x = (320 - l*8)/2;	//johnfitz -- 320x200 coordinate system
 		for (j=0 ; j<l ; j++, x+=8)
 		{
+#ifdef USE_GL4ES
+	glEnable(GL_BLEND);
+#endif
+
 			Draw_Character (x, y, start[j]);	//johnfitz -- stretch overlays
 			if (!remaining--)
 				return;
+
+#ifdef USE_GL4ES
+	glDisable(GL_BLEND);
+#endif
 		}
 
 		y += 8;
