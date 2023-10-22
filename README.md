@@ -5,7 +5,7 @@ A port of Quakespasm that supports the use of GL4ES for OpenGL ES systems origin
 
 ### This modified version adds support for use with GL4ES by ptitseb which can be found at:
 
-[https://https://github.com/ptitSeb/gl4es](https://https://github.com/ptitSeb/gl4es)
+[https://github.com/ptitSeb/gl4es](https://github.com/ptitSeb/gl4es)
 
 ### To compile for Linux Ubuntu/Debian derivitives make sure you have the necessary dependencies installed:
 
