@@ -25,5 +25,5 @@ Follow the usual regimen for populating id1, hipnotic, dopa, and rogue directori
 
 ### To run on Anbernic devices after building both quakespasm and gl4es:
 ```bash
-LD_LIBRARY_PATH=/path/to/gl4es LIBGL_GL=15 LIBGL_NOTEST=1 LIBGL_GAMMA=1.0 ./quakespasm
+LD_LIBRARY_PATH=/path/to/gl4es LIBGL_GL=15 LIBGL_NOTEST=1 ./quakespasm
 ```
